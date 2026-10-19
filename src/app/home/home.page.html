@@ -1,0 +1,424 @@
+<ion-header class="ion-no-border">
+  <ion-toolbar color="primary" class="main-toolbar">
+    <ion-title>
+      <div class="brand-title">
+        <ion-icon name="shield-checkmark-outline"></ion-icon>
+        <span>DAM CRM - Gestión de Clientes</span>
+      </div>
+    </ion-title>
+
+    <ion-buttons slot="end" class="toolbar-actions">
+      <!-- Navegación a la Galería de Supabase Storage -->
+      <ion-button routerLink="/galeria" fill="solid" color="secondary" class="nav-btn">
+        <ion-icon slot="start" name="images-outline"></ion-icon>
+        Imágenes Storage
+      </ion-button>
+
+      <!-- Botón para configurar URL/Key de Supabase si es necesario -->
+      <ion-button (click)="openConfigModal()" fill="clear" color="light" title="Configurar conexión Supabase">
+        <ion-icon slot="icon-only" name="settings-outline"></ion-icon>
+      </ion-button>
+
+      <!-- Estado de Sesión Reactivo con @if -->
+      @if (currentUser(); as user) {
+        <div class="session-pill">
+          <span class="session-email">{{ user.email }}</span>
+          <ion-badge [color]="userRole() === 'admin' ? 'warning' : 'tertiary'" class="role-badge">
+            {{ userRole() || 'admin' }}
+          </ion-badge>
+        </div>
+        <ion-button (click)="onLogout()" fill="outline" color="light" class="auth-btn">
+          <ion-icon slot="start" name="log-out-outline"></ion-icon>
+          Salir (Logout)
+        </ion-button>
+      } @else {
+        <ion-button (click)="openManualLoginModal()" fill="solid" color="light" class="auth-btn">
+          <ion-icon slot="start" name="log-in-outline"></ion-icon>
+          Iniciar Sesión
+        </ion-button>
+      }
+    </ion-buttons>
+  </ion-toolbar>
+</ion-header>
+
+<ion-content>
+  <div class="crm-container">
+    <!-- Banner informativo del modo RBAC + Login bajo demanda -->
+    <div class="security-banner">
+      <div class="security-banner-info">
+        <ion-icon name="lock-closed-outline"></ion-icon>
+        <span>
+          <strong>Modo Lectura Pública (RLS):</strong> El listado es visible para todos los usuarios.
+          Al intentar <strong>Insertar, Editar o Eliminar</strong> sin sesión activa, se solicitará
+          <strong>Login bajo demanda</strong> y rol <code>admin</code> en <code>public.profiles</code>.
+        </span>
+      </div>
+      @if (currentUser(); as user) {
+        <ion-chip color="success">
+          <ion-label>Autenticado: {{ user.email }} ({{ userRole() }})</ion-label>
+        </ion-chip>
+      } @else {
+        <ion-chip color="medium">
+          <ion-label>Sesión Anónima (Solo Lectura)</ion-label>
+        </ion-chip>
+      }
+    </div>
+
+    <ion-grid class="ion-no-padding">
+      <ion-row>
+        <!-- COLUMNA IZQUIERDA: FORMULARIO REACTIVO DE CREACIÓN / EDICIÓN -->
+        <ion-col size="12" size-lg="5" class="ion-padding-end-lg">
+          <ion-card class="crm-card">
+            <ion-card-header>
+              <ion-card-subtitle>
+                @if (editingClientId()) {
+                  MODO EDICIÓN DE REGISTRO
+                } @else {
+                  ALTA EN BASE DE DATOS
+                }
+              </ion-card-subtitle>
+              <ion-card-title>
+                @if (editingClientId()) {
+                  Editar Cliente
+                } @else {
+                  Nuevo Cliente
+                }
+              </ion-card-title>
+            </ion-card-header>
+
+            <ion-card-content>
+              <form [formGroup]="clientForm" (ngSubmit)="onSubmitClient()" novalidate>
+                <ion-item lines="full" class="form-item">
+                  <ion-icon slot="start" name="person-outline" color="primary"></ion-icon>
+                  <ion-input
+                    label="Nombre completo *"
+                    labelPlacement="stacked"
+                    placeholder="Ej. Elena Martínez Vega"
+                    formControlName="nombre"
+                  ></ion-input>
+                </ion-item>
+                @if (clientForm.get('nombre')?.touched && clientForm.get('nombre')?.invalid) {
+                  <ion-note color="danger" class="field-error">
+                    El nombre es obligatorio y debe tener al menos 3 caracteres.
+                  </ion-note>
+                }
+
+                <ion-item lines="full" class="form-item">
+                  <ion-icon slot="start" name="business-outline" color="primary"></ion-icon>
+                  <ion-input
+                    label="Empresa *"
+                    labelPlacement="stacked"
+                    placeholder="Ej. Nebrija Tech Solutions"
+                    formControlName="empresa"
+                  ></ion-input>
+                </ion-item>
+                @if (clientForm.get('empresa')?.touched && clientForm.get('empresa')?.invalid) {
+                  <ion-note color="danger" class="field-error">
+                    El nombre de la empresa es obligatorio.
+                  </ion-note>
+                }
+
+                <ion-item lines="full" class="form-item">
+                  <ion-icon slot="start" name="mail-outline" color="primary"></ion-icon>
+                  <ion-input
+                    type="email"
+                    label="Correo electrónico *"
+                    labelPlacement="stacked"
+                    placeholder="cliente@empresa.es"
+                    formControlName="email"
+                  ></ion-input>
+                </ion-item>
+                @if (clientForm.get('email')?.touched && clientForm.get('email')?.invalid) {
+                  <ion-note color="danger" class="field-error">
+                    Introduce una dirección de correo electrónico válida.
+                  </ion-note>
+                }
+
+                <div class="form-actions">
+                  <ion-button
+                    type="submit"
+                    expand="block"
+                    color="primary"
+                    [disabled]="saving()"
+                  >
+                    @if (saving()) {
+                      <ion-spinner name="crescent" slot="start"></ion-spinner>
+                      Guardando...
+                    } @else {
+                      <ion-icon
+                        slot="start"
+                        [name]="editingClientId() ? 'save-outline' : 'person-add-outline'"
+                      ></ion-icon>
+                      {{ editingClientId() ? 'Actualizar Cliente' : 'Guardar / Insertar' }}
+                    }
+                  </ion-button>
+
+                  @if (editingClientId()) {
+                    <ion-button
+                      type="button"
+                      expand="block"
+                      fill="outline"
+                      color="medium"
+                      (click)="cancelEdit()"
+                    >
+                      <ion-icon slot="start" name="close-circle-outline"></ion-icon>
+                      Cancelar Edición
+                    </ion-button>
+                  }
+                </div>
+              </form>
+            </ion-card-content>
+          </ion-card>
+        </ion-col>
+
+        <!-- COLUMNA DERECHA: LISTADO DE CLIENTES CON ION-ITEM-SLIDING -->
+        <ion-col size="12" size-lg="7">
+          <ion-card class="crm-card">
+            <ion-card-header class="list-header">
+              <div>
+                <ion-card-subtitle>TABLA PUBLIC.CLIENTS (SUPABASE)</ion-card-subtitle>
+                <ion-card-title>Listado de Clientes ({{ clients().length }})</ion-card-title>
+              </div>
+              <ion-button
+                fill="clear"
+                size="small"
+                (click)="loadClients()"
+                [disabled]="loading()"
+                title="Recargar clientes"
+              >
+                <ion-icon slot="start" name="refresh-outline"></ion-icon>
+                Actualizar
+              </ion-button>
+            </ion-card-header>
+
+            <ion-card-content>
+              @if (loading()) {
+                <div class="loading-box">
+                  <ion-spinner name="crescent" color="primary"></ion-spinner>
+                  <p>Sincronizando clientes con Supabase PostgreSQL...</p>
+                </div>
+              } @else {
+                <ion-list lines="full" class="client-list">
+                  @for (client of clients(); track client.id) {
+                    <ion-item-sliding #slidingItem>
+                      <ion-item class="client-item">
+                        <div class="avatar-circle" slot="start">
+                          {{ client.nombre.charAt(0).toUpperCase() }}
+                        </div>
+
+                        <ion-label>
+                          <h2 class="client-name">{{ client.nombre }}</h2>
+                          <p class="client-company">
+                            <ion-icon name="business-outline"></ion-icon>
+                            {{ client.empresa }}
+                          </p>
+                          <p class="client-email">
+                            <ion-icon name="mail-outline"></ion-icon>
+                            {{ client.email }}
+                          </p>
+                        </ion-label>
+
+                        <!-- Botones directos además de las opciones deslizables de ion-item-sliding -->
+                        <div slot="end" class="direct-item-actions">
+                          <ion-button
+                            fill="clear"
+                            color="primary"
+                            size="small"
+                            (click)="onRequestEdit(client, slidingItem)"
+                            title="Editar cliente"
+                          >
+                            <ion-icon slot="icon-only" name="create-outline"></ion-icon>
+                          </ion-button>
+                          <ion-button
+                            fill="clear"
+                            color="danger"
+                            size="small"
+                            (click)="onRequestDelete(client, slidingItem)"
+                            title="Eliminar cliente"
+                          >
+                            <ion-icon slot="icon-only" name="trash-outline"></ion-icon>
+                          </ion-button>
+                        </div>
+                      </ion-item>
+
+                      <ion-item-options side="end">
+                        <ion-item-option
+                          color="primary"
+                          (click)="onRequestEdit(client, slidingItem)"
+                        >
+                          <ion-icon slot="start" name="create-outline"></ion-icon>
+                          Editar
+                        </ion-item-option>
+                        <ion-item-option
+                          color="danger"
+                          (click)="onRequestDelete(client, slidingItem)"
+                        >
+                          <ion-icon slot="start" name="trash-outline"></ion-icon>
+                          Eliminar
+                        </ion-item-option>
+                      </ion-item-options>
+                    </ion-item-sliding>
+                  } @empty {
+                    <div class="empty-state">
+                      <ion-icon name="person-outline" class="empty-icon"></ion-icon>
+                      <h3>No hay clientes registrados</h3>
+                      <p>
+                        Ejecuta el script <code>supabase/setup.sql</code> en el SQL Editor de
+                        Supabase o inserta un nuevo cliente desde el formulario.
+                      </p>
+                    </div>
+                  }
+                </ion-list>
+              }
+            </ion-card-content>
+          </ion-card>
+        </ion-col>
+      </ion-row>
+    </ion-grid>
+  </div>
+
+  <!-- ========================================================================= -->
+  <!-- MODAL DE LOGIN BAJO DEMANDA (INTERCEPTOR DE SEGURIDAD CUD)                 -->
+  <!-- ========================================================================= -->
+  <ion-modal [isOpen]="isLoginModalOpen()" (didDismiss)="closeLoginModal()">
+    <ng-template>
+      <ion-header>
+        <ion-toolbar color="primary">
+          <ion-title>Autenticación Requerida (Supabase Auth)</ion-title>
+          <ion-buttons slot="end">
+            <ion-button (click)="closeLoginModal()">Cerrar</ion-button>
+          </ion-buttons>
+        </ion-toolbar>
+      </ion-header>
+
+      <ion-content class="ion-padding">
+        <div class="modal-auth-box">
+          <div class="modal-auth-header">
+            <div class="auth-lock-badge">
+              <ion-icon name="lock-closed-outline"></ion-icon>
+            </div>
+            <h2>Iniciar Sesión en DAM CRM</h2>
+            @if (pendingActionLabel(); as actionDesc) {
+              <p class="pending-notice">
+                Para <strong>{{ actionDesc }}</strong> es necesario iniciar sesión con una cuenta
+                con rol <code>admin</code> en <code>public.profiles</code>.
+              </p>
+            } @else {
+              <p class="pending-notice">
+                Introduce tus credenciales de Supabase Auth para habilitar las operaciones de
+                escritura (INSERT, UPDATE y DELETE).
+              </p>
+            }
+          </div>
+
+          <form [formGroup]="loginForm" (ngSubmit)="onConfirmLogin()" novalidate>
+            <ion-item lines="full" class="form-item">
+              <ion-icon slot="start" name="mail-outline" color="primary"></ion-icon>
+              <ion-input
+                type="email"
+                label="Email de usuario Supabase *"
+                labelPlacement="stacked"
+                placeholder="admin@nebrija.es"
+                formControlName="email"
+              ></ion-input>
+            </ion-item>
+
+            <ion-item lines="full" class="form-item">
+              <ion-icon slot="start" name="key-outline" color="primary"></ion-icon>
+              <ion-input
+                type="password"
+                label="Contraseña *"
+                labelPlacement="stacked"
+                placeholder="••••••••"
+                formControlName="password"
+              ></ion-input>
+            </ion-item>
+
+            @if (loginError(); as errMsg) {
+              <div class="auth-error-alert">
+                {{ errMsg }}
+              </div>
+            }
+
+            <div class="modal-actions">
+              <ion-button
+                type="submit"
+                expand="block"
+                color="primary"
+                [disabled]="loginLoading()"
+              >
+                @if (loginLoading()) {
+                  <ion-spinner name="crescent" slot="start"></ion-spinner>
+                  Verificando credenciales y rol...
+                } @else {
+                  <ion-icon slot="start" name="log-in-outline"></ion-icon>
+                  Autenticar y Continuar
+                }
+              </ion-button>
+
+              <ion-button
+                type="button"
+                expand="block"
+                fill="clear"
+                color="medium"
+                (click)="closeLoginModal()"
+              >
+                Cancelar
+              </ion-button>
+            </div>
+          </form>
+        </div>
+      </ion-content>
+    </ng-template>
+  </ion-modal>
+
+  <!-- ========================================================================= -->
+  <!-- MODAL DE CONFIGURACIÓN DE CREDENCIALES SUPABASE                           -->
+  <!-- ========================================================================= -->
+  <ion-modal [isOpen]="isConfigModalOpen()" (didDismiss)="isConfigModalOpen.set(false)">
+    <ng-template>
+      <ion-header>
+        <ion-toolbar color="dark">
+          <ion-title>Conexión al Proyecto Supabase</ion-title>
+          <ion-buttons slot="end">
+            <ion-button (click)="isConfigModalOpen.set(false)">Cerrar</ion-button>
+          </ion-buttons>
+        </ion-toolbar>
+      </ion-header>
+
+      <ion-content class="ion-padding">
+        <div class="modal-auth-box">
+          <p class="pending-notice">
+            Puedes definir tus credenciales en <code>src/environments/environment.ts</code> o
+            introducirlas aquí para conectar inmediatamente con tu instancia de Supabase.
+          </p>
+
+          <ion-item lines="full" class="form-item">
+            <ion-input
+              label="Supabase Project URL"
+              labelPlacement="stacked"
+              placeholder="https://xyzcompany.supabase.co"
+              [(ngModel)]="configUrl"
+            ></ion-input>
+          </ion-item>
+
+          <ion-item lines="full" class="form-item">
+            <ion-input
+              label="Supabase Anon Public Key"
+              labelPlacement="stacked"
+              placeholder="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
+              [(ngModel)]="configKey"
+            ></ion-input>
+          </ion-item>
+
+          <div class="modal-actions">
+            <ion-button expand="block" color="primary" (click)="saveSupabaseConfig()">
+              <ion-icon slot="start" name="save-outline"></ion-icon>
+              Guardar y Conectar
+            </ion-button>
+          </div>
+        </div>
+      </ion-content>
+    </ng-template>
+  </ion-modal>
+</ion-content>
